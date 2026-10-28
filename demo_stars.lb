@@ -1,0 +1,12 @@
+10 REM 星星三角形 + 打招呼 + 脉冲音阶
+20 INPUT "你叫什么名字"; N$
+30 PRINT "你好, "; N$; "!"
+40 INPUT "画几层星星"; N
+50 FOR I = 1 TO N
+60   FOR J = 1 TO I
+70     PRINT "*";
+80   NEXT J
+90   PRINT
+100 NEXT I
+110 PLAY "CDEFGAB"
+120 END

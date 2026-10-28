@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LetterCPU-26 · 26字母虚拟芯片</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0b1020; color:#dfe7ff; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+  header { padding:18px 24px 6px; }
+  header h1 { color:#38f28a; margin:0; font-size:26px; }
+  header p { color:#8b95b5; margin:6px 0 0; }
+  .wrap { display:flex; gap:16px; padding:16px 24px 24px; flex-wrap:wrap; }
+  .chip-panel { flex:1.2; min-width:340px; background:#070b16; border:1px solid #1e2a4a; border-radius:14px; padding:12px; }
+  canvas { width:100%; height:460px; background:#070b16; border-radius:10px; display:block; }
+  .regs { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:13px; background:#0e1528; border-radius:10px; padding:10px 12px; margin-top:10px; line-height:1.7; white-space:pre-wrap; }
+  .regs b { color:#38f28a; }
+  .lit { display:inline-block; min-width:22px; text-align:center; font-weight:800; border-radius:6px; padding:1px 4px; margin:0 1px; color:#06121f; }
+  .side { flex:1; min-width:340px; background:#0d1428; border:1px solid #1e2a4a; border-radius:14px; padding:14px; }
+  .side h3 { margin:4px 0 8px; font-size:14px; color:#fff; }
+  textarea { width:100%; height:190px; background:#0e1528; color:#e8f0ff; border:1px solid #26355c; border-radius:10px; font-family:ui-monospace,Menlo,monospace; font-size:13px; padding:10px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; align-items:center; }
+  button { background:#1a2547; color:#fff; border:1px solid #33477a; border-radius:9px; padding:8px 13px; font-size:13px; cursor:pointer; }
+  button.primary { background:#38f28a; color:#06121f; border-color:#38f28a; font-weight:800; }
+  button:hover { filter:brightness(1.15); }
+  button:disabled { opacity:.45; cursor:default; }
+  #log { height:170px; overflow:auto; background:#0e1528; border-radius:10px; padding:10px; font-family:ui-monospace,Menlo,monospace; font-size:12.5px; line-height:1.7; }
+  #log .out { color:#b8ffd9; } #log .err { color:#ff8f8f; } #log .info{ color:#9fb3dd; }
+  .cards { display:flex; gap:12px; padding:0 24px 24px; flex-wrap:wrap; }
+  .card { flex:1; min-width:240px; background:#0d1428; border:1px solid #1e2a4a; border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.7; color:#b9c4e2; }
+  .card b { color:#fff; }
+  code { background:#1a2547; padding:1px 6px; border-radius:6px; color:#fff; }
+  .k { color:#38f28a; font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌟 LetterCPU-26 · 26字母虚拟芯片</h1>
+  <p>不用 0 / 1，用 A~Z 共 26 个字母计算 · 1 个字母位(Lit) ≈ 4.7 bit · 数字 = 26进制字母串：B+C=D，Z+B=BA</p>
+</header>
+
+<div class="wrap">
+  <div class="chip-panel">
+    <canvas id="chip" width="640" height="460"></canvas>
+    <div class="regs" id="regs">汇编后这里显示寄存器…</div>
+  </div>
+  <div class="side">
+    <h3>📝 Letter-ASM 汇编程序</h3>
+    <textarea id="editor">; HELLO + WORLD —— 26进制大数加法
+LDA HELLO
+ADD WORLD
+STA RESULT
+OUT
+HLT</textarea>
+    <div class="row">
+      <button class="primary" onclick="assemble()">🔨 汇编</button>
+      <button class="primary" onclick="run()">▶ 运行</button>
+      <button onclick="stop()">⏹ 停止</button>
+      <button onclick="stepOnce()">👣 单步</button>
+      <button onclick="resetCpu()">🔄 重置</button>
+    </div>
+    <div class="row">
+      <span style="color:#8b95b5;font-size:12px">示例:</span>
+      <button onclick="loadDemo(0)">加法</button>
+      <button onclick="loadDemo(1)">倒数</button>
+      <button onclick="loadDemo(2)">进位</button>
+      <span style="color:#8b95b5;font-size:12px">速度:</span>
+      <input type="range" id="speed" min="120" max="1400" value="600" style="flex:1">
+    </div>
+    <h3>📟 输出 / 日志</h3>
+    <div id="log"></div>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card"><b>💡 怎么算？</b><br><span class="k">A=0 … Z=25</span>，字母串就是26进制数。<code>HELLO</code> = H×26⁴+E×26³+L×26²+L×26+O。<code>Z+B=BA</code> 正好是25+1=26产生进位，和二进制进位一模一样，只是“逢26进1”。</div>
+  <div class="card"><b>🧠 指令集 Letter-ISA v1</b><br><code>LDA / ADD / SUB / MUL / DIV / STA / JMP / JZ / JNZ / OUT / HLT</code><br>操作数可以是字母立即数 <code>B</code>、字母串 <code>HELLO</code>、内存名 <code>DATA</code>；数据定义 <code>COUNT = E</code>。</div>
+  <div class="card"><b>🔬 为什么好玩？</b><br>一个 Lit 有26种状态 ≈ <span class="k">4.7 bit</span>。指令助记符本身就是英文单词，程序读起来像英语句子。这是三进制(Setun)、十进制(ENIAC)之后的一次“字母进制”思想实验。</div>
+</div>
+
+<script>
+const ALPHA="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const V={}; [...ALPHA].forEach((c,i)=>V[c]=i);
+const demos=[
+`; HELLO + WORLD —— 26进制大数加法
+LDA HELLO
+ADD WORLD
+STA RESULT
+OUT
+HLT`,
+`; 倒数循环 E(4) -> A(0)
+COUNT = E
+LDA COUNT
+LOOP:
+OUT
+JZ DONE
+SUB B
+JMP LOOP
+DONE:
+HLT`,
+`; Z + B = BA —— 进位演示
+LDA Z
+ADD B
+OUT
+HLT`];
+const LIT_COLORS=["#38f28a","#4dd8ff","#c792ff","#ff7ad9","#ffd84d"];
+
+function s2v(s){ s=s.trim().toUpperCase(); let v=0; for(const c of s){ if(!(c in V)) throw "非法字母数 "+s; v=v*26+V[c]; } return v; }
+function v2s(n){ if(n<0) return "-"+v2s(-n); if(n===0) return "A"; let o=""; while(n>0){ o=ALPHA[n%26]+o; n=Math.floor(n/26);} return o; }
+function fmt(n){ return v2s(n)+"("+n+")"; }
+
+let cpu=null, timer=null, busT=0;
+function newCpu(){ return {acc:0,pc:0,zero:true,halted:false,instr:[],labels:{},mem:{},outs:[],steps:0}; }
+
+function log(html, cls){ const d=document.getElementById("log"); const p=document.createElement("div"); p.className=cls||"info"; p.innerHTML=html; d.appendChild(p); d.scrollTop=d.scrollHeight; }
+function loadDemo(i){ document.getElementById("editor").value=demos[i]; assemble(); }
+
+function assemble(){
+  stop(); cpu=newCpu();
+  document.getElementById("log").innerHTML="";
+  try{
+    const lines=document.getElementById("editor").value.split("\n");
+    let pend=[];
+    lines.forEach((raw,idx)=>{
+      let line=raw.split(";")[0].trim().toUpperCase();
+      if(!line) return;
+      if(line.includes("=")){ const [a,,b]=line.partition?[]:[]; const parts=line.split("="); const name=parts[0].trim(), word=parts[1].trim();
+        if(!/^[A-Z_]+$/.test(name)||!/^[A-Z]+$/.test(word)) throw "第"+(idx+1)+"行数据定义错误: "+raw;
+        cpu.mem[name]=s2v(word); return; }
+      if(line.endsWith(":")){ const lb=line.slice(0,-1).trim(); if(!lb) throw "空标签"; pend.push(lb); return; }
+      const ps=line.split(/\s+/); const op=ps[0], arg=ps[1]||null;
+      const ok=["LDA","ADD","SUB","MUL","DIV","STA","JMP","JZ","JNZ","OUT","HLT","NOP"];
+      if(!ok.includes(op)) throw "第"+(idx+1)+"行未知指令 "+op;
+      if(["LDA","ADD","SUB","MUL","DIV","STA","JMP","JZ","JNZ"].includes(op)&&!arg) throw op+" 缺少操作数";
+      const at=cpu.instr.length; pend.forEach(l=>cpu.labels[l]=at); pend=[];
+      cpu.instr.push({op,arg,raw:raw.trim()});
+    });
+    pend.forEach(l=>cpu.labels[l]=cpu.instr.length);
+    for(const w of ["HELLO","WORLD"]) if(!(w in cpu.mem)) cpu.mem[w]=s2v(w);
+    log("✅ 汇编成功: "+cpu.instr.length+" 条指令, 内存 "+Object.entries(cpu.mem).map(([k,v])=>k+"="+fmt(v)).join(" "),"info");
+  }catch(e){ log("❌ 汇编失败: "+e,"err"); }
+  render();
+}
+function resolve(arg){ let a=arg.trim().toUpperCase(); if(a.startsWith("[")&&a.endsWith("]")) a=a.slice(1,-1); if(a in cpu.mem) return cpu.mem[a]; return s2v(a); }
+function execOne(){
+  if(!cpu||!cpu.instr.length) assemble();
+  if(cpu.halted){ log("🏁 程序停机","info"); render(); return false; }
+  if(cpu.pc>=cpu.instr.length){ cpu.halted=true; log("🏁 程序结束","info"); render(); return false; }
+  const {op,arg,raw}=cpu.instr[cpu.pc]; const cur=cpu.pc;
+  const jump=(l)=>{ l=l.trim().toUpperCase(); if(!(l in cpu.labels)) throw "未知标签 "+l; cpu.pc=cpu.labels[l]; };
+  try{
+    if(op==="LDA") cpu.acc=resolve(arg);
+    else if(op==="ADD") cpu.acc+=resolve(arg);
+    else if(op==="SUB") cpu.acc-=resolve(arg);
+    else if(op==="MUL") cpu.acc*=resolve(arg);
+    else if(op==="DIV"){ const d=resolve(arg); if(d===0) throw "DIV A 除以零"; cpu.acc=Math.floor(cpu.acc/d); }
+    else if(op==="STA") cpu.mem[arg.trim().toUpperCase().replace(/[\[\]]/g,"")]=cpu.acc;
+    else if(op==="JMP"){ jump(arg); cpu.steps++; cpu.zero=(cpu.acc===0); log("PC="+cur+" "+esc(raw)+" → 跳转","info"); render(op); return true; }
+    else if(op==="JZ"){ if(cpu.acc===0){ jump(arg); cpu.steps++; log("PC="+cur+" "+esc(raw)+" → 为零跳转","info"); render(op); return true; } }
+    else if(op==="JNZ"){ if(cpu.acc!==0){ jump(arg); cpu.steps++; log("PC="+cur+" "+esc(raw)+" → 非零跳转","info"); render(op); return true; } }
+    else if(op==="OUT"){ cpu.outs.push(cpu.acc); log("📟 OUT → <b>"+fmt(cpu.acc)+"</b>","out"); }
+    else if(op==="HLT"){ cpu.halted=true; cpu.zero=(cpu.acc===0); log("🏁 停机 HLT, ACC="+fmt(cpu.acc),"out"); render(op); return false; }
+    cpu.zero=(cpu.acc===0); cpu.pc++; cpu.steps++;
+    if(op!=="OUT") log("PC="+String(cur).padStart(2,"0")+" "+esc(raw)+" → ACC=<b>"+fmt(cpu.acc)+"</b>","info");
+  }catch(e){ log("❌ 运行错误: "+esc(e),"err"); stop(); render(); return false; }
+  render(op); return !cpu.halted && cpu.pc<cpu.instr.length;
+}
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+function stepOnce(){ stop(); if(execOne()===false){} }
+function run(){ if(!cpu) assemble(); stop(); const loop=()=>{ const alive=execOne(); if(alive){ const sp=1400-document.getElementById("speed").value+120; timer=setTimeout(loop,sp);} }; loop(); }
+function stop(){ if(timer){clearTimeout(timer); timer=null;} }
+function resetCpu(){ assemble(); log("🔄 已重置","info"); }
+
+// ---------- 芯片绘制 ----------
+const cv=document.getElementById("chip"), ctx=cv.getContext("2d");
+function render(activeOp){
+  drawChip(activeOp||"");
+  const r=document.getElementById("regs");
+  if(!cpu){ r.textContent="…"; return; }
+  const letters=v2s(cpu.acc>=0?cpu.acc:-cpu.acc);
+  let lits=""; [...letters].slice(-10).forEach((c,i)=>{ lits+='<span class="lit" style="background:'+LIT_COLORS[i%5]+'">'+c+"</span>"; });
+  const mem=Object.entries(cpu.mem).slice(0,8).map(([k,v])=>k+"="+fmt(v)).join("  ")||"(空)";
+  const cur=(cpu.instr[cpu.pc]&&!cpu.halted)?cpu.instr[cpu.pc].raw:"—";
+  r.innerHTML="ACC 累加器 = <b>"+fmt(cpu.acc)+"</b>  "+lits+"   PC="+cpu.pc+"   ZF="+(cpu.zero?1:0)+"   步数="+cpu.steps+"<br>当前指令: <b>"+esc(cur)+"</b><br>内存: "+esc(mem);
+}
+function drawChip(activeOp){
+  const W=cv.width,H=cv.height; ctx.clearRect(0,0,W,H);
+  const cx=W/2, cy=H/2-6, size=Math.min(W,H)-80;
+  ctx.strokeStyle="#3a4a6e"; ctx.lineWidth=4;
+  for(let i=0;i<8;i++){ const p=-size/2+i*(size/7);
+    [[cx+p,cy-size/2-20,cx+p,cy-size/2],[cx+p,cy+size/2,cx+p,cy+size/2+20],
+     [cx-size/2-20,cy+p,cx-size/2,cy+p],[cx+size/2,cy+p,cx+size/2+20,cy+p]].forEach(([a,b,c2,d])=>{ctx.beginPath();ctx.moveTo(a,b);ctx.lineTo(c2,d);ctx.stroke();}); }
+  ctx.fillStyle="#131c33"; ctx.strokeStyle="#38f28a"; ctx.lineWidth=2;
+  ctx.beginPath(); ctx.roundRect(cx-size/2,cy-size/2,size,size,14); ctx.fill(); ctx.stroke();
+  ctx.fillStyle="#38f28a"; ctx.font="bold 14px sans-serif"; ctx.textAlign="center";
+  ctx.fillText("LetterCPU-26 · 26字母计算核心",cx,cy-size/2+26);
+  const mods=[["ACC","累加器",-1,-1],["ALU","26进制运算",1,-1],["PC","程序计数",-1,1],["MEM","字母内存",1,1]];
+  const pos={};
+  const actMap={LDA:"MEM",STA:"MEM",ADD:"ALU",SUB:"ALU",MUL:"ALU",DIV:"ALU",JMP:"PC",JZ:"PC",JNZ:"PC",OUT:"ACC"};
+  const hot=actMap[activeOp]||"";
+  mods.forEach(([k,sub,gx,gy])=>{
+    const x=cx+gx*size/4, y=cy+gy*size/4, w=size/3.1, h=size/4.4; pos[k]=[x,y];
+    ctx.fillStyle=(k===hot)?"#ffb020":"#16213c"; ctx.strokeStyle=(k===hot)?"#ffb020":"#4d628f"; ctx.lineWidth=2;
+    ctx.beginPath(); ctx.roundRect(x-w/2,y-h/2,w,h,10); ctx.fill(); ctx.stroke();
+    ctx.fillStyle=(k===hot)?"#000":"#fff"; ctx.font="bold 14px sans-serif";
+    ctx.fillText(k,x,y-2); ctx.font="12px sans-serif"; ctx.fillText(sub,x,y+16);
+  });
+  // ACC 字母跑马灯
+  if(cpu){ const s=v2s(cpu.acc>=0?cpu.acc:-cpu.acc).slice(-8); const [ax,ay]=pos["ACC"];
+    ctx.font="bold 16px monospace"; ctx.textAlign="center";
+    [...s].forEach((c,i)=>{ ctx.fillStyle=LIT_COLORS[i%5]; ctx.fillText(c,ax-((s.length-1)*9)+i*18,ay+44); }); }
+  // 数据总线流动
+  if(cpu&&cpu.instr.length&&!cpu.halted){ busT=(busT+1)%24; const [x0,y0]=pos["MEM"],[x1,y1]=pos["ACC"];
+    const fx=x0+(x1-x0)*busT/24, fy=y0+(y1-y0)*busT/24;
+    ctx.fillStyle="#38f28a"; ctx.beginPath(); ctx.arc(fx,fy,6,0,7); ctx.fill();
+    requestAnimationFrame(()=>drawChip(activeOp||""));
+  }
+}
+assemble();
+</script>
+</body>
+</html>

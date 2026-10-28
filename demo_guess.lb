@@ -1,0 +1,11 @@
+10 REM 猜字母数: 机器想一个 A~Z, 你来猜
+20 PRINT "我想了一个 A~Z 的字母, 猜猜是多少?"
+30 TARGET = RND(26) - 1
+40 TRIES = 0
+50 INPUT "猜一个字母"; G$
+60 TRIES = TRIES + 1
+70 G = VAL(G$)
+80 IF G = TARGET THEN PRINT "猜中了! 用了 "; TRIES; " 次" : PLAY "CDEFGAB" : END
+90 IF G < TARGET THEN PRINT "小了, 往后猜 (往 Z 方向)"
+100 IF G > TARGET THEN PRINT "大了, 往前猜 (往 A 方向)"
+110 GOTO 50

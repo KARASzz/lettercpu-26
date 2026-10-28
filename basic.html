@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>LetterBASIC · 26字母芯片上的 QBASIC</title>
+<style>
+  * { box-sizing: border-box; }
+  body { margin:0; background:#0b1020; color:#dfe7ff; font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif; }
+  header { padding:18px 24px 6px; }
+  header h1 { color:#38f28a; margin:0; font-size:26px; }
+  header p { color:#8b95b5; margin:6px 0 0; }
+  .wrap { display:flex; gap:16px; padding:16px 24px 24px; flex-wrap:wrap; }
+  .panel { background:#070b16; border:1px solid #1e2a4a; border-radius:14px; padding:12px; }
+  .left { flex:1.2; min-width:360px; }
+  canvas { width:100%; display:block; background:#070b16; border-radius:10px; }
+  #chip { height:250px; } #scope { height:130px; }
+  .cap { color:#8b95b5; font-size:11px; margin:6px 2px 0; }
+  .vars { font-family:ui-monospace,Menlo,Consolas,monospace; font-size:12.5px; background:#0e1528; border-radius:10px; padding:10px 12px; margin-top:8px; line-height:1.7; white-space:pre-wrap; }
+  .vars b { color:#38f28a; }
+  .side { flex:1; min-width:360px; background:#0d1428; border:1px solid #1e2a4a; border-radius:14px; padding:14px; }
+  .side h3 { margin:4px 0 8px; font-size:14px; color:#fff; }
+  textarea { width:100%; height:220px; background:#0e1528; color:#e8f0ff; border:1px solid #26355c; border-radius:10px; font-family:ui-monospace,Menlo,monospace; font-size:13px; padding:10px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; align-items:center; }
+  button { background:#1a2547; color:#fff; border:1px solid #33477a; border-radius:9px; padding:8px 13px; font-size:13px; cursor:pointer; }
+  button.primary { background:#38f28a; color:#06121f; border-color:#38f28a; font-weight:800; }
+  button:hover { filter:brightness(1.15); }
+  button:disabled { opacity:.45; cursor:default; }
+  #log { height:190px; overflow:auto; background:#0e1528; border-radius:10px; padding:10px; font-family:ui-monospace,Menlo,monospace; font-size:12.5px; line-height:1.7; }
+  #log .out { color:#b8ffd9; } #log .err { color:#ff8f8f; } #log .info{ color:#9fb3dd; } #log .inp{ color:#ffd84d; }
+  #inrow { display:flex; gap:8px; margin-top:8px; align-items:center; }
+  #prompt { color:#ffd84d; font-family:ui-monospace,Menlo,monospace; font-size:13px; white-space:nowrap; }
+  #cmdline { flex:1; background:#0e1528; color:#fff; border:1px solid #26355c; border-radius:9px; padding:8px 10px; font-family:ui-monospace,Menlo,monospace; font-size:13px; }
+  #cmdline:disabled { opacity:.4; }
+  .cards { display:flex; gap:12px; padding:0 24px 24px; flex-wrap:wrap; }
+  .card { flex:1; min-width:250px; background:#0d1428; border:1px solid #1e2a4a; border-radius:12px; padding:12px 14px; font-size:13px; line-height:1.8; color:#b9c4e2; }
+  .card b { color:#fff; }
+  code { background:#1a2547; padding:1px 6px; border-radius:6px; color:#fff; }
+  .k { color:#38f28a; font-weight:700; }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌟 LetterBASIC · 26字母芯片上的 QBASIC</h1>
+  <p>PRINT 数字自动显示 <b>字母(十进制)</b> · 纯字母串可直接当数字用(Z+B=<b>BA(26)</b>) · <code>PLAY "CDE"</code> 用脉冲数发声，示波器可验证</p>
+</header>
+
+<div class="wrap">
+  <div class="panel left">
+    <canvas id="chip" width="640" height="250"></canvas>
+    <div class="cap">▲ 芯片状态：6 核（数字/字符串/行号/变量/调用栈/脉冲输出）· 进度条 = ISA 伪指令执行进度</div>
+    <canvas id="scope" width="640" height="130"></canvas>
+    <div class="cap">▲ 时序脉冲示波器：脉冲数 == 字母值（A=0 静默帧 … Z=25 个脉冲）</div>
+    <div class="vars" id="vars">装载后这里显示变量…</div>
+  </div>
+  <div class="side">
+    <h3>📝 LetterBASIC 程序</h3>
+    <textarea id="editor">10 REM 打招呼 + 星星 + 脉冲音阶
+20 INPUT "你叫什么名字"; N$
+30 PRINT "你好, "; N$; "!"
+40 INPUT "画几层星星"; N
+50 FOR I = 1 TO N
+60   FOR J = 1 TO I
+70     PRINT "*";
+80   NEXT J
+90   PRINT
+100 NEXT I
+110 PLAY "CDEFGAB"
+120 END</textarea>
+    <div class="row">
+      <button class="primary" onclick="doLoad()">🔨 装载</button>
+      <button class="primary" onclick="doRun()">▶ 运行</button>
+      <button onclick="doStop()">⏹ 停止</button>
+      <button onclick="doStep()">👣 单步</button>
+      <button onclick="doReset()">🔄 重置</button>
+    </div>
+    <div class="row">
+      <span style="color:#8b95b5;font-size:12px">示例:</span>
+      <button onclick="loadDemo('stars')">星星</button>
+      <button onclick="loadDemo('fib')">斐波那契</button>
+      <button onclick="loadDemo('mult')">乘法表</button>
+      <button onclick="loadDemo('guess')">猜字母</button>
+      <span style="color:#8b95b5;font-size:12px">速度:</span>
+      <input type="range" id="speed" min="30" max="1200" value="250" style="flex:1">
+    </div>
+    <h3>📟 输出</h3>
+    <div id="log"></div>
+    <div id="inrow">
+      <span id="prompt">? </span>
+      <input id="cmdline" placeholder="程序 INPUT 时在这里输入，回车确认" disabled>
+      <button onclick="submitInput()">确认</button>
+    </div>
+  </div>
+</div>
+
+<div class="cards">
+  <div class="card"><b>⌨️ BASIC 命令</b><br><code>PRINT / ?</code> <code>INPUT [提示;] X</code> <code>LET X=…</code>(LET可省) <code>X$="…"</code> <code>IF…THEN…[ELSE…]</code> <code>GOTO/GOSUB/RETURN</code> <code>FOR…TO…[STEP…]/NEXT</code> <code>WHILE/WEND</code> <code>DO/LOOP WHILE|UNTIL</code> <code>DIM A(n)</code> <code>POKE/PEEK</code> <code>SOUND/PLAY/SLEEP/CLS</code> <code>REM/'/行号/END</code></div>
+  <div class="card"><b>🧮 表达式</b><br><code>+ - * / MOD ( ) &lt; &gt; = &lt;= &gt;= &lt;&gt; AND OR NOT</code>，<code>&amp;</code> 拼字符串<br>函数 <code>ABS INT RND LEN ASC VAL CHR$</code><br><code>VAL("HELLO")</code>=<span class="k">3276872</span>（26进制转数字），<code>RND(26)</code>=1~26</div>
+  <div class="card"><b>🌊 时序脉冲物理层</b><br>一帧 = <code>START(高2拍) + N个脉冲 + STOP(低2拍) + 间隔</code>，N==字母值。一根信号线 + 一个计数器 = 26字母CPU总线。<code>PLAY "CDE"</code> 把字母按脉冲数变成音高，示波器数脉冲可验证。</div>
+</div>
+
+<script>
+/* ================= 26进制 ================= */
+const ALPHA="ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const V={}; [...ALPHA].forEach((c,i)=>V[c]=i);
+const LIT_COLORS=["#38f28a","#4dd8ff","#c792ff","#ff7ad9","#ffd84d"];
+function S2V(s){ s=String(s).trim().toUpperCase(); let v=0; for(const c of s){ if(!(c in V)) throw "非法字母数 "+s; v=v*26+V[c]; } return v; }
+function V2S(n){ if(n<0) return "-"+V2S(-n); if(n===0) return "A"; let o=""; while(n>0){ o=ALPHA[n%26]+o; n=Math.floor(n/26);} return o; }
+function fmt(n){ return V2S(n)+"("+n+")"; }
+function esc(s){ return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+const delay=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ================= 词法 ================= */
+function stripComment(s){ let out="",inS=false; for(const c of s){ if(c==='"') inS=!inS; if(c==="'"&&!inS) break; out+=c; } return out; }
+function splitTop(s,sep){ sep=sep||","; let parts=[],cur="",inS=false,depth=0;
+  for(const c of s){ if(c==='"') inS=!inS;
+    if(!inS){ if(c==="("||c==="[") depth++; if(c===")"||c==="]") depth--; }
+    if(c===sep&&!inS&&depth===0){ parts.push(cur); cur=""; } else cur+=c; }
+  parts.push(cur); return parts; }
+function tokenize(src){ const toks=[]; const re=/("[^"]*")|(\d+)|([A-Za-z_][A-Za-z0-9_]*\$?)|(<=|>=|<>|[-+*/()=,<>:;&])|(\s+)/g;
+  let m,last=0;
+  while((m=re.exec(src))){ if(m.index!==last) throw "无法识别: "+src.slice(last);
+    last=re.lastIndex; if(m[5]) continue;
+    if(m[1]) toks.push(["STRING",m[1]]); else if(m[2]) toks.push(["NUMBER",m[2]]);
+    else if(m[3]) toks.push(["WORD",m[3]]); else toks.push(["OP",m[4]]); }
+  if(last!==src.length) throw "无法识别: "+src.slice(last);
+  return toks; }
+function num(v){ if(typeof v==="boolean") return v?1:0; if(typeof v==="number") return Math.floor(v);
+  if(typeof v==="string"){ v=v.trim(); if(/^-?\d+$/.test(v)) return parseInt(v,10);
+    if(/^[A-Za-z]+$/.test(v)) return S2V(v); throw "不能当数字: "+v; }
+  throw "不能当数字"; }
+
+/* ================= 表达式 ================= */
+class ExprParser{
+  constructor(getvar,builtin,arrayHas,arrayGet){ this.getvar=getvar; this.builtin=builtin;
+    this.arrayHas=arrayHas; this.arrayGet=arrayGet; this.toks=[]; this.pos=0; }
+  parse(t){ this.toks=tokenize(t); this.pos=0; const v=this.orExpr();
+    if(this.pos!==this.toks.length) throw "表达式多余部分: "+this.toks[this.pos][1]; return v; }
+  peek(){ return this.pos<this.toks.length?this.toks[this.pos]:[null,null]; }
+  eat(typ,val){ const [t,v]=this.peek(); if(t===null) throw "表达式意外结束";
+    if(typ&&t!==typ) throw "期望"+typ+",得到"+v; if(val&&v.toUpperCase()!==val) throw "期望"+val+",得到"+v;
+    this.pos++; return v; }
+  orExpr(){ let v=this.andExpr(); while(this.peek()[1]&&this.peek()[1].toUpperCase()==="OR"){ this.eat(); v=(num(v)||num(this.andExpr()))?1:0; } return v; }
+  andExpr(){ let v=this.notExpr(); while(this.peek()[1]&&this.peek()[1].toUpperCase()==="AND"){ this.eat(); v=(num(v)&&num(this.notExpr()))?1:0; } return v; }
+  notExpr(){ if(this.peek()[1]&&this.peek()[1].toUpperCase()==="NOT"){ this.eat(); return num(this.notExpr())?0:1; } return this.cmpExpr(); }
+  cmpExpr(){ let v=this.addExpr(); const [t,op]=this.peek();
+    if(t==="OP"&&["=","<>","<",">","<=",">="].includes(op)){ this.eat(); const r=this.addExpr();
+      let a=v,b=r; if(typeof v!=="string"&&typeof r!=="string"){ a=num(v); b=num(r); } else { a=String(v); b=String(r); }
+      const ok={"=":a===b,"<>":a!==b,"<":a<b,">":a>b,"<=":a<=b,">=":a>=b}[op]; return ok?1:0; } return v; }
+  addExpr(){ let v=this.mulExpr();
+    while(true){ const [t,op]=this.peek();
+      if(t==="OP"&&(op==="+"||op==="-"||op==="&")){ this.eat(); const r=this.mulExpr();
+        if(op==="&") v=String(v)+String(r);
+        else if(op==="+") v=(typeof v==="string"||typeof r==="string")?String(v)+String(r):num(v)+num(r);
+        else v=num(v)-num(r);
+      } else return v; } }
+  mulExpr(){ let v=this.unary();
+    while(true){ const [t,op]=this.peek();
+      if(t==="OP"&&(op==="*"||op==="/")){ this.eat(); const r=this.unary();
+        if(op==="*") v=num(v)*num(r);
+        else { if(num(r)===0) throw "除以零"; v=Math.floor(num(v)/num(r)); } }
+      else if(t==="WORD"&&op.toUpperCase()==="MOD"){ this.eat(); const r=this.unary();
+        if(num(r)===0) throw "除以零"; v=num(v)%num(r); }
+      else return v; } }
+  unary(){ const [t,op]=this.peek();
+    if(t==="OP"&&(op==="+"||op==="-")){ this.eat(); const v=this.unary(); return op==="+"?v:-num(v); }
+    return this.atom(); }
+  atom(){ const [t,v]=this.peek();
+    if(t==="STRING"){ this.eat(); return v.slice(1,-1); }
+    if(t==="NUMBER"){ this.eat(); return parseInt(v,10); }
+    if(t==="OP"&&v==="("){ this.eat(); const x=this.orExpr(); this.eat("OP",")"); return x; }
+    if(t==="WORD"){ const name=this.eat().toUpperCase();
+      if(this.peek()[0]==="OP"&&this.peek()[1]==="("){ this.eat();
+        if(name==="PEEK"){ const [t2,v2]=this.peek(); if(t2!=="WORD") throw "PEEK(数组,下标)";
+          const an=this.eat().toUpperCase(); if(this.peek()[1]!==",") throw "PEEK(数组,下标)";
+          this.eat(); const ix=this.orExpr(); this.eat("OP",")"); return this.arrayGet(an,num(ix)); }
+        const args=[]; if(!(this.peek()[0]==="OP"&&this.peek()[1]===")")){ args.push(this.orExpr());
+          while(this.peek()[0]==="OP"&&this.peek()[1]===","){ this.eat(); args.push(this.orExpr()); } }
+        this.eat("OP",")");
+        if(this.arrayHas(name)&&args.length===1) return this.arrayGet(name,num(args[0]));
+        return this.builtin(name,args); }
+      try{ return this.getvar(name); }
+      catch(e){ if(/^[A-Za-z]+$/.test(name)) return S2V(name); throw e; } }
+    throw "表达式错误，在 "+v; }
+}
+
+/* ================= 编译器: BASIC -> ISA伪指令 ================= */
+let __lblN=0; const __lbl=b=>"L"+b+(++__lblN);
+class BasicCompiler{
+  constructor(){ this.code=[]; }
+  out(op,arg,line){ this.code.push({op,arg:arg==null?null:arg,line}); }
+  lab(name,line){ this.code.push({op:"__LABEL__",arg:name,line}); }
+  compileLines(stmts){ const stack=[];
+    for(const [ln,text] of stmts){ if(ln!==null) this.lab("LINE"+ln,ln); this.stmt(text,ln,stack); }
+    if(stack.length) throw "有未闭合的块: "+stack[0][0]; return this.code; }
+  stmt(text,ln,stack){ this.out("BEAT",null,ln); const t=text.trim();
+    if(!t||/^REM\b/i.test(t)||t.startsWith("'")){ this.out("NOP",null,ln); return; }
+    for(const part of splitTop(t,":")) this.one(part.trim(),ln,stack); }
+  one(t,ln,stack){ if(!t) return;
+    const sp=t.indexOf(" "); const W=(sp<0?t:t.slice(0,sp)).toUpperCase(); const rest=sp<0?"":t.slice(sp+1);
+    if(W==="PRINT"||W==="?"){ if(!rest.trim()){ this.out("__PRINTLN__","",ln); return; }
+      const items=splitTop(rest,";").map(x=>x.trim()).filter(x=>x!=="");
+      this.out("__PRINT__",items.join("\n")+(rest.trimEnd().endsWith(";")?"\n<NONE>":"\n<NL>"),ln); return; }
+    if(W==="INPUT"){ const m=rest.trim().match(/^(?:"([^"]*)"\s*;\s*)?([A-Za-z_][A-Za-z0-9_]*\$?(\([^)]*\))?)\s*$/i);
+      if(!m) throw "INPUT 语法: INPUT [提示;] 变量 — 得 "+rest;
+      this.out("__INPUT__",(m[1]==null?"? ":m[1]+" ")+"\n"+m[2].toUpperCase(),ln); return; }
+    if(W==="GOTO"||W==="GOSUB"){ const m=t.match(/(\d+)\s*$/); if(!m) throw W+" 后需行号: "+t;
+      this.out(W==="GOSUB"?"CALL":"JMP","LINE"+m[1],ln); return; }
+    if(W==="RETURN"){ this.out("RET",null,ln); return; }
+    if(W==="END"||W==="STOP"){ this.out("HLT",null,ln); return; }
+    if(W==="CLS"){ this.out("__CLS__",null,ln); return; }
+    if(W==="SLEEP"){ this.out("__SLEEP__",rest.trim(),ln); return; }
+    if(W==="SOUND"){ this.out("__SOUND__",rest.trim(),ln); return; }
+    if(W==="PLAY"){ let s=rest.trim(); if(s.length>=2&&s.startsWith('"')&&s.endsWith('"')) s=s.slice(1,-1);
+      this.out("__PLAY__",s,ln); return; }
+    if(W==="DIM"){ let found=false; const re=/([A-Za-z_][A-Za-z0-9_]*\$?)\s*\(\s*(\d+)\s*\)/g; let m;
+      while((m=re.exec(t))){ found=true; this.out("__DIM__",m[1].toUpperCase()+","+m[2],ln); }
+      if(!found) throw "DIM 语法: DIM A(n)"; return; }
+    if(W==="POKE"){ this.out("__POKE__",rest.trim(),ln); return; }
+    if(W==="LET"){ this.let(rest,ln); return; }
+    if(W==="IF"){ this.cIf(t,ln,stack); return; }
+    if(W==="FOR"){ const m=t.match(/^FOR\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s+TO\s+(.+?)(\s+STEP\s+(.+))?$/i);
+      if(!m) throw "FOR 语法: FOR X = a TO b [STEP s]";
+      const top=__lbl("FT"),end=__lbl("FE");
+      this.out("__FOR__",m[1].toUpperCase()+" = "+m[2]+" TO "+m[3]+" STEP "+(m[5]||"1")+" => "+top+","+end,ln);
+      this.lab(top,ln); stack.push(["FOR",m[1].toUpperCase(),top,end]); return; }
+    if(W==="NEXT"){ if(!stack.length||stack[stack.length-1][0]!=="FOR") throw "NEXT 无匹配 FOR";
+      const f=stack.pop(); this.out("__NEXT__",f[1]+" => "+f[2]+","+f[3],ln); this.lab(f[3],ln); return; }
+    if(W==="WHILE"){ const top=__lbl("WH"),end=__lbl("WE"); this.lab(top,ln);
+      this.out("__WHILE__",rest.trim()+" => "+end,ln); stack.push(["WHILE",top,end]); return; }
+    if(W==="WEND"){ if(!stack.length||stack[stack.length-1][0]!=="WHILE") throw "WEND 无匹配 WHILE";
+      const w=stack.pop(); this.out("JMP",w[1],ln); this.lab(w[2],ln); return; }
+    if(W==="DO"){ const top=__lbl("DO"); this.lab(top,ln); stack.push(["DO",top]); return; }
+    if(W==="LOOP"){ if(!stack.length||stack[stack.length-1][0]!=="DO") throw "LOOP 无匹配 DO";
+      const d=stack.pop(); const m=rest.trim().match(/^(WHILE|UNTIL)\s+(.+)$/i);
+      if(m) this.out("__DOCHK__",m[1].toUpperCase()+" "+m[2]+" => "+d[1],ln);
+      else this.out("JMP",d[1],ln); return; }
+    if(/^[A-Za-z_][A-Za-z0-9_]*\$?\s*(\([^)]*\))?\s*=/.test(t)){ this.let(t,ln); return; }
+    throw "未知语句: "+t; }
+  let(rest,ln){ const m=rest.match(/^([A-Za-z_][A-Za-z0-9_]*\$?)(\([^)]*\))?\s*=\s*(.+)$/is);
+    if(!m) throw "赋值语法错误: "+rest;
+    if(m[2]) this.out("__SETIDX__",m[1].toUpperCase()+","+m[2].slice(1,-1)+","+m[3],ln);
+    else this.out("__LET__",m[1].toUpperCase()+" = "+m[3],ln); }
+  cIf(t,ln,stack){ const m=t.match(/^IF\s+(.+?)\s+THEN\s+(.+)$/is); if(!m) throw "IF 语法: IF 条件 THEN …";
+    let cond=m[1],then=m[2].trim(),els=null;
+    const me=then.match(/^(.+?)\s+ELSE\s+(.+)$/is); if(me){ then=me[1].trim(); els=me[2].trim(); }
+    const mg=then.match(/^(?:GO\s*TO|GOTO|GOSUB)\s+(\d+)$/i),mn=then.match(/^(\d+)$/);
+    if((mg||mn)&&!els){ const L=(mg||mn)[1];
+      this.out("__IFJ__",cond+" ? "+(/GOSUB/i.test(then)?"CALL":"JMP")+" LINE"+L,ln); return; }
+    const end=__lbl("IF");
+    if(els){ const e2=__lbl("IE"); this.out("__IF__",cond+" ? ELSE "+e2,ln);
+      for(const p of splitTop(then,":")) this.one(p.trim(),ln,stack);
+      this.out("JMP",end,ln); this.lab(e2,ln);
+      for(const p of splitTop(els,":")) this.one(p.trim(),ln,stack);
+      this.lab(end,ln);
+    } else { this.out("__IF__",cond+" ? END "+end,ln);
+      for(const p of splitTop(then,":")) this.one(p.trim(),ln,stack);
+      this.lab(end,ln); } }
+}
+
+/* ================= 运行时 ================= */
+let AC=null;
+function beep(freq,secs){ try{ if(typeof AudioContext==="undefined"&&typeof webkitAudioContext==="undefined") return;
+  AC=AC||new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==="suspended") AC.resume();
+  const o=AC.createOscillator(),g=AC.createGain(); o.frequency.value=freq; o.type="sine";
+  g.gain.value=0.12; o.connect(g); g.connect(AC.destination);
+  o.start(); o.stop(AC.currentTime+Math.min(secs,2)); }catch(e){} }
+
+class LetterBasic{
+  constructor(hooks){ hooks=hooks||{};
+    this.onPrint=hooks.onPrint||function(){}; this.onInput=hooks.onInput||null;
+    this.onTrace=hooks.onTrace||null; this.reset(); }
+  reset(){ this.num={}; this.str={}; this.arr={}; this.forSt=[]; this.gosubSt=[];
+    this.pc=0; this.prog=[]; this.labels={}; this.halted=false; this.outLine="";
+    this.lastWord="HELLO"; this.curStmt=""; }
+  load(src){ const stmts=LetterBasic.parse(src); __lblN=0;
+    const comp=new BasicCompiler(); const code=comp.compileLines(stmts);
+    this.prog=[]; this.labels={};
+    for(const e of code){ if(e.op==="__LABEL__") this.labels[e.arg]=this.prog.length;
+      else this.prog.push(e); }
+    this.pc=0; this.halted=false; this.curStmt=""; return stmts; }
+  static parse(src){ const out=[];
+    for(const raw of src.split("\n")){ const s=stripComment(raw).trim(); if(!s) continue;
+      const m=s.match(/^(\d+)\s+(.*)$/); out.push(m?[parseInt(m[1],10),m[2]]:[null,s]); }
+    if(out.some(p=>p[0]!==null)){ const n=out.filter(p=>p[0]!==null).sort((a,b)=>a[0]-b[0]);
+      return n.concat(out.filter(p=>p[0]===null)); } return out; }
+  getvar(n){ n=n.toUpperCase();
+    if(n.endsWith("$")){ if(n in this.str) return this.str[n];
+      if(n.slice(0,-1) in this.str) return this.str[n.slice(0,-1)]; throw "未定义字符串变量 "+n; }
+    if(n in this.num) return this.num[n]; throw "未定义变量 "+n; }
+  setvar(n,v){ n=n.toUpperCase();
+    if(n.endsWith("$")||typeof v==="string"){ const k=n.endsWith("$")?n:n+"$";
+      this.str[k]=String(v); this.str[k.replace(/\$$/,"")]=String(v); }
+    else this.num[n]=num(v); }
+  arrayHas(n){ return n.toUpperCase() in this.arr; }
+  arrayGet(n,i){ const a=this.arr[n.toUpperCase()]||[]; return (i>=0&&i<a.length)?a[i]:0; }
+  arraySet(n,i,v){ n=n.toUpperCase(); if(!(n in this.arr)) this.arr[n]=new Array(256).fill(0);
+    while(this.arr[n].length<=i) this.arr[n].push(n.endsWith("$")?"":0); this.arr[n][i]=v; }
+  builtin(n,args){ const a=args[0]===undefined?0:args[0]; n=n.toUpperCase().replace(/\$$/,"");
+    if(n==="ABS") return Math.abs(num(a));
+    if(n==="INT"){ const x=Number(a); return isNaN(x)?0:Math.floor(x); }
+    if(n==="RND"){ if(args.length) return 1+Math.floor(Math.random()*Math.max(1,num(a))); return Math.random(); }
+    if(n==="LEN") return String(a).length;
+    if(n==="ASC"){ const s=String(a); return s.length?s.charCodeAt(0):0; }
+    if(n==="VAL"){ const s=String(a).trim(); if(/^-?\d+$/.test(s)) return parseInt(s,10);
+      if(/^[A-Za-z]+$/.test(s)) return S2V(s); return 0; }
+    if(n==="CHR") return String.fromCharCode(num(a)%0x110000);
+    throw "未知函数 "+n; }
+  ev(e){ const p=new ExprParser(x=>this.getvar(x),(n,a)=>this.builtin(n,a),
+    n=>this.arrayHas(n),(n,i)=>this.arrayGet(n,i)); return p.parse(e); }
+  emit(s,end){ if(end===""){ this.outLine+=String(s); }
+    else { const t=this.outLine+String(s); this.outLine=""; this.onPrint(t); } }
+  lbl(n){ if(!(n in this.labels)) throw "未知行号/标签: "+n; return this.labels[n]; }
+  coerce(raw){ raw=String(raw).trim(); if(/^-?\d+$/.test(raw)) return parseInt(raw,10);
+    if(/^[A-Za-z]+$/.test(raw)) return S2V(raw); const x=parseInt(raw,10); return isNaN(x)?0:x; }
+  async step(){ if(this.halted||this.pc>=this.prog.length){ this.halted=true; return null; }
+    const e=this.prog[this.pc],op=e.op,arg=e.arg,cur=this.pc;
+    if(op!=="BEAT") this.curStmt=(e.line==null?"":"["+e.line+"] ")+op+(arg==null?"":" "+arg);
+    if(this.onTrace) this.onTrace(op,arg);
+    const go=n=>{ this.pc=n; };
+    switch(op){
+      case "BEAT": this.pc++; return {op,pc:cur};
+      case "NOP": this.pc++; return {op,pc:cur};
+      case "HLT": this.halted=true; if(this.outLine) this.emit("",undefined); this.pc++; return {op,pc:cur,halted:true};
+      case "JMP": go(this.lbl(arg)); return {op,pc:cur};
+      case "CALL": this.gosubSt.push(this.pc+1); go(this.lbl(arg)); return {op,pc:cur};
+      case "RET": if(!this.gosubSt.length) throw "RETURN 无匹配 GOSUB"; go(this.gosubSt.pop()); return {op,pc:cur};
+      case "__CLS__": this.onPrint("(清屏)"); this.pc++; return {op:"CLS",pc:cur};
+      case "__SLEEP__": { const s=arg&&arg.trim()?num(this.ev(arg)):0;
+        await delay(Math.max(0,Math.min(3,s))*1000); this.pc++; return {op:"SLEEP",pc:cur}; }
+      case "__SOUND__": { const ps=splitTop(arg||"");
+        const f=ps.length&&ps[0].trim()?num(this.ev(ps[0])):440;
+        const d=ps.length>1?Math.max(0,Math.min(5,num(this.ev(ps[1])))):1;
+        this.emit("♪ SOUND "+f+"Hz "+d+"s"); beep(f,d); await delay(Math.min(d,1.5)*1000);
+        this.pc++; return {op:"SOUND",pc:cur}; }
+      case "__PLAY__": { const letters=String(arg||"").toUpperCase().replace(/[^A-Z]/g,"");
+        this.lastWord=letters||"A";
+        this.emit("♪ PLAY "+this.lastWord+" (脉冲音阶, "+this.lastWord.length+" 个字母)");
+        for(const c of this.lastWord){ beep(220*Math.pow(2,S2V(c)/12),0.22); await delay(230); }
+        this.pc++; return {op:"PLAY",pc:cur}; }
+      case "__LET__": { const i=arg.indexOf("="); const vn=arg.slice(0,i).trim().toUpperCase();
+        this.setvar(vn,this.ev(arg.slice(i+1))); this.pc++; return {op:"LET",pc:cur}; }
+      case "__SETIDX__": { const ps=splitTop(arg); const vn=ps[0].trim().toUpperCase();
+        this.arraySet(vn,num(this.ev(ps[1].trim())),this.ev(ps.slice(2).join(","))); this.pc++; return {op:"SETIDX",pc:cur}; }
+      case "__DIM__": { const i=arg.indexOf(","); this.arr[arg.slice(0,i).trim().toUpperCase()]=new Array(parseInt(arg.slice(i+1).trim(),10)).fill(0);
+        this.pc++; return {op:"DIM",pc:cur}; }
+      case "__POKE__": { const ps=splitTop(arg);
+        this.arraySet(ps[0].trim().toUpperCase(),num(this.ev(ps[1].trim())),this.ev(ps.slice(2).join(",")));
+        this.pc++; return {op:"POKE",pc:cur}; }
+      case "__PRINT__": { const i=arg.lastIndexOf("\n"); const items=arg.slice(0,i).split("\n"),mode=arg.slice(i+1);
+        let out=""; for(const it of items){ const v=this.ev(it);
+          if(typeof v==="string"){ out+=v; this.lastWord=(v.toUpperCase().replace(/[^A-Z]/g,"")||this.lastWord); }
+          else { out+=(v>=0?fmt(v):v)+" "; this.lastWord=V2S(v>=0?v:-v); } }
+        if(mode==="<NL>") this.emit(out); else this.emit(out,""); this.pc++; return {op:"PRINT",pc:cur}; }
+      case "__PRINTLN__": this.emit(""); this.pc++; return {op:"PRINT",pc:cur};
+      case "__INPUT__": { const i=arg.indexOf("\n"); const prompt=arg.slice(0,i),vn=arg.slice(i+1).trim();
+        let raw=""; if(this.onInput) raw=await this.onInput(prompt); raw=String(raw==null?"":raw).trim();
+        if(vn.toUpperCase().endsWith("$")) this.setvar(vn,raw);
+        else { const m=vn.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*(\([^)]*\))?$/i);
+          if(m&&m[2]) this.arraySet(m[1],num(this.ev(m[2].slice(1,-1))),this.coerce(raw));
+          else this.num[vn.toUpperCase().replace(/\$$/,"")]=this.coerce(raw); }
+        this.pc++; return {op:"INPUT",pc:cur}; }
+      case "__IF__": { const i=arg.indexOf("?"); const v=num(this.ev(arg.slice(0,i).trim()));
+        const dest=arg.slice(i+1).trim().split(/\s+/).pop();
+        if(v) this.pc++; else go(this.lbl(dest)); return {op:"IF",pc:cur}; }
+      case "__IFJ__": { const i=arg.indexOf("?"); const v=num(this.ev(arg.slice(0,i).trim()));
+        const [how,dest]=arg.slice(i+1).trim().split(/\s+/);
+        if(v){ if(how==="CALL") this.gosubSt.push(this.pc+1); go(this.lbl(dest)); } else this.pc++;
+        return {op:"IF",pc:cur}; }
+      case "__FOR__": { const m=arg.match(/^(\w+)\s*=\s*(.+)\s+TO\s+(.+)\s+STEP\s+(.+)\s*=>\s*(\w+),(\w+)$/);
+        const va=num(this.ev(m[2])),vb=num(this.ev(m[3])),vs=num(this.ev(m[4]));
+        if(vs===0) throw "STEP 不能为 0"; this.num[m[1]]=va;
+        this.forSt.push({v:m[1],end:vb,step:vs,top:this.lbl(m[5]),endpc:this.lbl(m[6])});
+        this.pc++; return {op:"FOR",pc:cur}; }
+      case "__NEXT__": { if(!this.forSt.length) throw "NEXT 无匹配 FOR";
+        const f=this.forSt[this.forSt.length-1];
+        this.num[f.v]=(this.num[f.v]||0)+f.step; const c=this.num[f.v];
+        if((f.step>0&&c<=f.end)||(f.step<0&&c>=f.end)) go(f.top);
+        else { this.forSt.pop(); go(f.endpc); } return {op:"NEXT",pc:cur}; }
+      case "__WHILE__": { const i=arg.lastIndexOf("=>"); const v=num(this.ev(arg.slice(0,i).trim()));
+        if(v) this.pc++; else go(this.lbl(arg.slice(i+2).trim())); return {op:"WHILE",pc:cur}; }
+      case "__DOCHK__": { const m=arg.match(/^(WHILE|UNTIL)\s+(.+)\s*=>\s*(\w+)$/);
+        const v=num(this.ev(m[2])); const back=(m[1]==="WHILE")?(v!==0):(v===0);
+        if(back) go(this.lbl(m[3])); else this.pc++; return {op:"LOOP",pc:cur}; }
+      default: throw "未实现伪指令: "+op;
+    } }
+}
+
+/* ================= 界面 ================= */
+const DEMOS={
+stars:`10 REM 打招呼 + 星星 + 脉冲音阶
+20 INPUT "你叫什么名字"; N$
+30 PRINT "你好, "; N$; "!"
+40 INPUT "画几层星星"; N
+50 FOR I = 1 TO N
+60   FOR J = 1 TO I
+70     PRINT "*";
+80   NEXT J
+90   PRINT
+100 NEXT I
+110 PLAY "CDEFGAB"
+120 END`,
+fib:`10 REM 斐波那契前10项
+20 DIM F(10)
+30 F(0) = 0
+40 F(1) = 1
+50 FOR I = 2 TO 9
+60   F(I) = F(I-1) + F(I-2)
+70 NEXT I
+80 FOR I = 0 TO 9
+90   PRINT "F("; I; ")="; F(I)
+100 NEXT I
+110 END`,
+mult:`10 REM 九九乘法表
+20 FOR A = 1 TO 9
+30   FOR B = 1 TO A
+40     PRINT A; "x"; B; "="; A*B; " ";
+50   NEXT B
+60   PRINT
+70 NEXT A
+80 END`,
+guess:`10 REM 猜字母数: 机器想一个 A~Z
+20 PRINT "我想了一个 A~Z 的字母, 猜猜是多少?"
+30 TARGET = RND(26) - 1
+40 TRIES = 0
+50 INPUT "猜一个字母"; G$
+60 TRIES = TRIES + 1
+70 G = VAL(G$)
+80 IF G = TARGET THEN PRINT "猜中了! 用了 "; TRIES; " 次" : PLAY "CDEFGAB" : END
+90 IF G < TARGET THEN PRINT "小了, 往后猜 (往 Z 方向)"
+100 IF G > TARGET THEN PRINT "大了, 往前猜 (往 A 方向)"
+110 GOTO 50`};
+
+let lb=null, running=false, busy=false, inputResolver=null;
+function log(html,cls){ const d=document.getElementById("log"); const p=document.createElement("div");
+  p.className=cls||"info"; p.innerHTML=html; d.appendChild(p); d.scrollTop=d.scrollHeight; }
+function loadDemo(k){ document.getElementById("editor").value=DEMOS[k]; doLoad(); }
+function speedMs(){ return parseInt(document.getElementById("speed").value,10)||250; }
+
+function doLoad(){ doStopSync(); document.getElementById("log").innerHTML="";
+  lb=new LetterBasic({onPrint:t=>{ if(String(t).trim()!=="") log(esc(t),"out"); },
+    onInput:askInput, onTrace:()=>{}});
+  try{ const st=lb.load(document.getElementById("editor").value);
+    log("✅ 装载成功: "+st.length+" 行 BASIC, "+lb.prog.length+" 条 ISA 伪指令","info");
+  }catch(e){ log("❌ 装载失败: "+esc(e),"err"); }
+  render(); }
+function doReset(){ doStopSync(); document.getElementById("log").innerHTML=""; doLoad(); log("🔄 已重置","info"); }
+function doStopSync(){ running=false; if(inputResolver){ const r=inputResolver; inputResolver=null; r(""); } }
+function doStop(){ doStopSync(); log("⏹ 已停止","info"); render(); }
+
+async function doStep(){ if(busy) return; if(!lb) doLoad(); doStopSync(); busy=true;
+  try{ const r=await lb.step(); if(r===null) log("🏁 程序结束","info"); }
+  catch(e){ log("❌ 运行错误 PC="+lb.pc+": "+esc(e),"err"); }
+  busy=false; render(); }
+
+async function doRun(){ if(busy||running) return; if(!lb) doLoad();
+  if(lb.halted) doLoad(); running=true; busy=true;
+  while(running&&!lb.halted){ try{ const r=await lb.step(); render();
+      if(r===null){ log("🏁 程序结束","info"); break; } }
+    catch(e){ log("❌ 运行错误 PC="+lb.pc+": "+esc(e),"err"); break; }
+    if(!running) break; await delay(speedMs()); }
+  running=false; busy=false; render(); }
+
+function askInput(prompt){ return new Promise(res=>{ inputResolver=res;
+  log("⌨️ "+esc(prompt)+" <span class='inp'>(等待输入…)</span>","inp");
+  const box=document.getElementById("cmdline"); box.disabled=false; box.value=""; box.focus();
+  document.getElementById("prompt").textContent=prompt+" "; }); }
+function submitInput(){ if(!inputResolver) return; const box=document.getElementById("cmdline");
+  const v=box.value; box.value=""; box.disabled=true;
+  document.getElementById("prompt").textContent="? ";
+  log("&gt; "+esc(v),"inp"); const r=inputResolver; inputResolver=null; r(v); }
+document.getElementById("cmdline").addEventListener("keydown",e=>{ if(e.key==="Enter") submitInput(); });
+
+/* ================= 绘制 ================= */
+const chipCv=document.getElementById("chip"),cx2d=chipCv.getContext("2d");
+const scCv=document.getElementById("scope"),sx2d=scCv.getContext("2d");
+function render(){
+  const v=document.getElementById("vars");
+  if(!lb){ v.textContent="变量: (未装载)"; return; }
+  const ns=Object.entries(lb.num).slice(0,10).map(([k,x])=>k+"="+(x>=0?fmt(x):x)).join("  ")||"(无)";
+  const ss=Object.entries(lb.str).filter(([k])=>k.endsWith("$")).slice(0,6).map(([k,x])=>k+'="'+x+'"').join("  ")||"(无)";
+  const as=Object.entries(lb.arr).slice(0,6).map(([k,x])=>k+"("+x.length+")").join("  ")||"(无)";
+  v.innerHTML="数字变量: <b>"+esc(ns)+"</b><br>字符串: "+esc(ss)+"<br>数组: "+esc(as)+
+    "<br>ISA-PC "+lb.pc+"/"+lb.prog.length+" · FOR "+lb.forSt.length+"层 · GOSUB "+lb.gosubSt.length+"层<br>当前: <b>"+esc(lb.curStmt||"—")+"</b>";
+  drawChip(); drawScope(lb.lastWord||"HELLO"); }
+function drawChip(){ const W=chipCv.width,H=chipCv.height; cx2d.clearRect(0,0,W,H);
+  const cx=W/2,cy=H/2,sw=Math.min(W-40,560),sh=180;
+  cx2d.fillStyle="#131c33"; cx2d.strokeStyle="#38f28a"; cx2d.lineWidth=2;
+  cx2d.beginPath(); cx2d.roundRect(cx-sw/2,cy-sh/2,sw,sh,14); cx2d.fill(); cx2d.stroke();
+  cx2d.fillStyle="#38f28a"; cx2d.font="bold 14px sans-serif"; cx2d.textAlign="center";
+  cx2d.fillText("LetterCPU-26 · BASIC 运行时",cx,cy-sh/2+24);
+  const mods=[["ACC","数字核"],["STR","字符串核"],["PC","行号/跳转"],["MEM","变量/数组"],["STK","调用栈"],["PLS","脉冲输出"]];
+  mods.forEach((m,i)=>{ const x=cx-sw/2+44+i*((sw-88)/5),y=cy+8;
+    cx2d.fillStyle="#16213c"; cx2d.strokeStyle="#4d628f"; cx2d.lineWidth=2;
+    cx2d.beginPath(); cx2d.roundRect(x-40,y-32,80,64,10); cx2d.fill(); cx2d.stroke();
+    cx2d.fillStyle="#fff"; cx2d.font="bold 13px monospace"; cx2d.fillText(m[0],x,y-4);
+    cx2d.fillStyle="#8b95b5"; cx2d.font="11px sans-serif"; cx2d.fillText(m[1],x,y+15); });
+  const p=lb&&lb.prog.length?Math.min(1,lb.pc/lb.prog.length):0;
+  cx2d.fillStyle="#1a2547"; cx2d.fillRect(cx-sw/2+20,cy+sh/2-26,sw-40,8);
+  cx2d.fillStyle="#38f28a"; cx2d.fillRect(cx-sw/2+20,cy+sh/2-26,(sw-40)*p,8); }
+function pulsesOf(w){ const cs=[]; for(const c of String(w).toUpperCase()) if(c>="A"&&c<="Z") cs.push(V[c]); return cs; }
+function drawScope(word){ const W=scCv.width,H=scCv.height; sx2d.clearRect(0,0,W,H);
+  const cs=pulsesOf(word).slice(0,12);
+  sx2d.fillStyle="#8b95b5"; sx2d.font="11px sans-serif"; sx2d.textAlign="left";
+  sx2d.fillText("时序脉冲 · "+word+" 脉冲"+JSON.stringify(cs),10,14);
+  sx2d.textAlign="right"; sx2d.fillStyle="#38f28a";
+  sx2d.fillText("共 "+cs.reduce((a,b)=>a+b,0)+" 个脉冲",W-10,14);
+  // 画第一帧波形
+  const n=cs.length?cs[0]:0,mid=H/2+22,amp=30;
+  const seq=[1,1]; for(let i=0;i<n;i++) seq.push(1,0); seq.push(0,0,0);
+  const step=(W-20)/seq.length; sx2d.strokeStyle="#38f28a"; sx2d.lineWidth=2; sx2d.beginPath();
+  seq.forEach((b,i)=>{ const x=10+i*step,y=b?mid-amp:mid+amp; if(i===0) sx2d.moveTo(x,y); else sx2d.lineTo(x,y); });
+  sx2d.stroke();
+  let lx=10; for(let i=0;i<Math.min(cs.length,10);i++){ sx2d.fillStyle=LIT_COLORS[i%5];
+    sx2d.font="bold 15px monospace"; sx2d.textAlign="center";
+    sx2d.fillText(String(word).toUpperCase().replace(/[^A-Z]/g,"")[i]||"",20+i*((W-40)/10),mid+amp+22); } }
+doLoad();
+</script>
+</body>
+</html>
